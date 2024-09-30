@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>批量 EXIF 编辑器</title>
+    <!-- 添加 viewport 元标签 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            /* 移除 max-width，让页面在移动设备上自动铺满 */
+            margin: 0 auto;
+            padding: 20px;
+            /* 添加响应式设计 */
+            box-sizing: border-box;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin-right: 10px;
+            margin-bottom: 10px; /* 在移动设备上增加按钮之间的间距 */
+        }
+        #status, #result, #progress, #downloadLink {
+            margin-bottom: 20px;
+            word-wrap: break-word; /* 防止长文本溢出 */
+        }
+    </style>
+</head>
+<body>
+    <h1>批量 EXIF 编辑器</h1>
+    <div id="status">选择的文件数: 0</div>
+    <div id="result">状态: 等待选择文件</div>
+    <div id="progress"></div>
+    <div id="downloadLink"></div>
+    <input type="file" id="fileInput" multiple accept="image/jpeg,image/png" style="display: none;">
+    <button onclick="document.getElementById('fileInput').click()">选择照片</button>
+    <button onclick="processImages()">处理</button>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/piexifjs/1.0.6/piexif.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script>
+        let selectedFiles = [];
+
+        document.getElementById('fileInput').addEventListener('change', (event) => {
+            selectedFiles = Array.from(event.target.files);
+            document.getElementById('status').textContent = `选择的文件数: ${selectedFiles.length}`;
+        });
+
+        async function processImages() {
+            if (selectedFiles.length === 0) {
+                alert('请先选择图片。');
+                return;
+            }
+
+            document.getElementById('result').textContent = '状态：正在处理...';
+            document.getElementById('progress').textContent = '';
+            document.getElementById('downloadLink').innerHTML = '';
+
+            let processed = 0;
+            let failed = 0;
+            const zip = new JSZip();
+            const batchSize = 10; // 每批处理的文件数
+
+            // 生成不重复的随机时间数组并打乱顺序
+            const uniqueDates = generateUniqueRandomDates(selectedFiles.length);
+
+            for (let i = 0; i < selectedFiles.length; i += batchSize) {
+                const batch = selectedFiles.slice(i, i + batchSize);
+                await Promise.all(batch.map(async (file, index) => {
+                    try {
+                        const randomDate = uniqueDates[i + index]; // 获取不重复的随机时间
+                        const result = await processImage(file, randomDate);
+                        zip.file(result.fileName, result.content.split(',')[1], {base64: true});
+                        processed++;
+                    } catch (error) {
+                        console.error('处理文件时出错:', error);
+                        failed++;
+                    }
+                    updateProgress(processed, failed, selectedFiles.length);
+                }));
+            }
+
+            document.getElementById('result').textContent = `状态：正在生成ZIP文件...`;
+
+            try {
+                if (processed > 0) { // 仅在有成功处理的文件时生成ZIP
+                    const content = await zip.generateAsync({type:"blob"});
+                    const blobUrl = URL.createObjectURL(content);
+
+                    // 创建一个下载链接
+                    const link = document.createElement('a');
+                    link.href = blobUrl;
+                    link.download = "modified_images.zip";
+                    link.textContent = "点击这里下载ZIP文件";
+
+                    // 将链接添加到页面
+                    const downloadLinkDiv = document.getElementById('downloadLink');
+                    downloadLinkDiv.innerHTML = '';
+                    downloadLinkDiv.appendChild(link);
+
+                    document.getElementById('result').textContent = `状态：完成。成功处理: ${processed}, 失败: ${failed}`;
+                } else {
+                    document.getElementById('result').textContent = `状态：所有文件处理失败，请检查文件格式。`;
+                }
+            } catch (error) {
+                console.error('生成ZIP文件时出错:', error);
+                document.getElementById('result').textContent = `状态：生成ZIP文件失败。请尝试减少文件数量或刷新页面重试。`;
+            }
+        }
+
+        function updateProgress(processed, failed, total) {
+            const progress = ((processed + failed) / total * 100).toFixed(2);
+            document.getElementById('progress').textContent = `进度: ${progress}% (成功: ${processed}, 失败: ${failed})`;
+        }
+
+        function generateUniqueRandomDates(count) {
+            const dates = [];
+            const now = new Date();
+            const past24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 24小时前
+
+            const usedTimes = new Set();
+
+            while (dates.length < count) {
+                const randomTime = randomDateInRange(past24Hours, now);
+                const timeKey = randomTime.getTime();
+                if (!usedTimes.has(timeKey)) {
+                    usedTimes.add(timeKey);
+                    dates.push(randomTime);
+                }
+            }
+
+            // 打乱日期数组顺序
+            shuffleArray(dates);
+
+            return dates;
+        }
+
+        function randomDateInRange(start, end) {
+            const startMs = start.getTime();
+            const endMs = end.getTime();
+            const randomMs = startMs + Math.random() * (endMs - startMs);
+            return new Date(randomMs);
+        }
+
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+        }
+
+        function processImage(file, randomDate) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const fileType = file.type;
+                        let newFileName = '';
+                        let newFileContent = e.target.result;
+
+                        const isoValue = Math.floor(Math.random() * 19) * 25 + 50;
+
+                        // 曝光时间数组，确保不超过0.125秒（即1/8秒）
+                        const exposureTimes = [
+                            [1, 8000], [1, 4000], [1, 2000], [1, 1000], [1, 500],
+                            [1, 250], [1, 125], [1, 60], [1, 30], [1, 15],
+                            [1, 8]
+                        ];
+                        const exposureTime = exposureTimes[Math.floor(Math.random() * exposureTimes.length)];
+
+                        // 确保焦距只能是26mm或70mm
+                        const focalLength = Math.random() < 0.5 ? 26 : 70;
+                        const fNumber = focalLength === 26 ? [18, 10] : [24, 10]; // f/1.8 或 f/2.4
+
+                        if (fileType === 'image/jpeg') {
+                            let exifObj = piexif.load(e.target.result);
+
+                            // 修改EXIF数据
+                            exifObj["0th"][piexif.ImageIFD.Model] = "Galaxy S23 Ultra";
+                            exifObj["0th"][piexif.ImageIFD.Make] = "samsung";
+                            exifObj["Exif"][piexif.ExifIFD.DateTimeOriginal] = formatDate(randomDate);
+                            exifObj["Exif"][piexif.ExifIFD.ISOSpeedRatings] = isoValue;
+                            exifObj["Exif"][piexif.ExifIFD.ExposureTime] = exposureTime;
+
+                            // 设置焦距、光圈和曝光补偿
+                            exifObj["Exif"][piexif.ExifIFD.FocalLength] = [focalLength, 1];
+                            exifObj["Exif"][piexif.ExifIFD.FNumber] = fNumber;
+                            exifObj["Exif"][piexif.ExifIFD.ExposureBiasValue] = [0, 1]; // 0.00 EV
+                            exifObj["Exif"][piexif.ExifIFD.FocalLengthIn35mmFilm] = focalLength;
+
+                            // 添加 ExifVersion 标签，值为 "0220"
+                            exifObj["Exif"][piexif.ExifIFD.ExifVersion] = '0220'; // 正确的方式
+
+                            // 将修改后的EXIF数据写回图像
+                            const exifBytes = piexif.dump(exifObj);
+                            newFileContent = piexif.insert(exifBytes, e.target.result);
+                            newFileName = `modified_${file.name}`;
+                        } else if (fileType === 'image/png') {
+                            // 对于PNG，我们将元数据添加到文件名中
+                            const fNumberValue = fNumber[0] / fNumber[1];
+                            newFileName = `SM-F9460_samsung_${formatDateForFileName(randomDate)}_ISO${isoValue}_${focalLength}mm_f${fNumberValue}_${file.name}`;
+                        } else {
+                            throw new Error('不支持的文件类型');
+                        }
+
+                        resolve({fileName: newFileName, content: newFileContent});
+                    } catch (error) {
+                        reject(error);
+                    }
+                };
+                reader.onerror = function() {
+                    reject(new Error('文件读取错误'));
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function formatDate(date) {
+            const yyyy = date.getFullYear();
+            const MM = String(date.getMonth() + 1).padStart(2, '0');
+            const dd = String(date.getDate()).padStart(2, '0');
+            const HH = String(date.getHours()).padStart(2, '0');
+            const mm = String(date.getMinutes()).padStart(2, '0');
+            const ss = String(date.getSeconds()).padStart(2, '0');
+            return `${yyyy}:${MM}:${dd} ${HH}:${mm}:${ss}`;
+        }
+
+        function formatDateForFileName(date) {
+            const yyyy = date.getFullYear();
+            const MM = String(date.getMonth() + 1).padStart(2, '0');
+            const dd = String(date.getDate()).padStart(2, '0');
+            const HH = String(date.getHours()).padStart(2, '0');
+            const mm = String(date.getMinutes()).padStart(2, '0');
+            const ss = String(date.getSeconds()).padStart(2, '0');
+            return `${yyyy}${MM}${dd}_${HH}${mm}${ss}`;
+        }
+    </script>
+</body>
+</html>

@@ -169,9 +169,9 @@
                         ];
                         const exposureTime = exposureTimes[Math.floor(Math.random() * exposureTimes.length)];
 
-                        // 确保焦距只能是26mm或70mm
-                        const focalLength = Math.random() < 0.5 ? 26 : 70;
-                        const fNumber = focalLength === 26 ? [18, 10] : [24, 10]; // f/1.8 或 f/2.4
+                        // 确保焦距只能是24mm或70mm
+                        const focalLength = Math.random() < 0.5 ? 24 : 70;
+                        const fNumber = focalLength === 24 ? [17, 10] : [24, 10]; // f/1.7 或 f/2.4
 
                         if (fileType === 'image/jpeg') {
                             let exifObj = piexif.load(e.target.result);
@@ -199,7 +199,7 @@
                         } else if (fileType === 'image/png') {
                             // 对于PNG，我们将元数据添加到文件名中
                             const fNumberValue = fNumber[0] / fNumber[1];
-                            newFileName = `SM-F9460_samsung_${formatDateForFileName(randomDate)}_ISO${isoValue}_${focalLength}mm_f${fNumberValue}_${file.name}`;
+                            newFileName = `Galaxy_S23_Ultra_samsung_${formatDateForFileName(randomDate)}_ISO${isoValue}_${focalLength}mm_f${fNumberValue}_${file.name}`;
                         } else {
                             throw new Error('不支持的文件类型');
                         }

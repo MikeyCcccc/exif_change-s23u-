@@ -8,21 +8,19 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            /* 移除 max-width，让页面在移动设备上自动铺满 */
             margin: 0 auto;
             padding: 20px;
-            /* 添加响应式设计 */
             box-sizing: border-box;
         }
         button {
             padding: 10px 20px;
             font-size: 16px;
             margin-right: 10px;
-            margin-bottom: 10px; /* 在移动设备上增加按钮之间的间距 */
+            margin-bottom: 10px;
         }
         #status, #result, #progress, #downloadLink {
             margin-bottom: 20px;
-            word-wrap: break-word; /* 防止长文本溢出 */
+            word-wrap: break-word;
         }
     </style>
 </head>
@@ -60,16 +58,15 @@
             let processed = 0;
             let failed = 0;
             const zip = new JSZip();
-            const batchSize = 10; // 每批处理的文件数
+            const batchSize = 10;
 
-            // 生成不重复的随机时间数组并打乱顺序
             const uniqueDates = generateUniqueRandomDates(selectedFiles.length);
 
             for (let i = 0; i < selectedFiles.length; i += batchSize) {
                 const batch = selectedFiles.slice(i, i + batchSize);
                 await Promise.all(batch.map(async (file, index) => {
                     try {
-                        const randomDate = uniqueDates[i + index]; // 获取不重复的随机时间
+                        const randomDate = uniqueDates[i + index];
                         const result = await processImage(file, randomDate);
                         zip.file(result.fileName, result.content.split(',')[1], {base64: true});
                         processed++;
@@ -84,17 +81,15 @@
             document.getElementById('result').textContent = `状态：正在生成ZIP文件...`;
 
             try {
-                if (processed > 0) { // 仅在有成功处理的文件时生成ZIP
+                if (processed > 0) {
                     const content = await zip.generateAsync({type:"blob"});
                     const blobUrl = URL.createObjectURL(content);
 
-                    // 创建一个下载链接
                     const link = document.createElement('a');
                     link.href = blobUrl;
                     link.download = "modified_images.zip";
                     link.textContent = "点击这里下载ZIP文件";
 
-                    // 将链接添加到页面
                     const downloadLinkDiv = document.getElementById('downloadLink');
                     downloadLinkDiv.innerHTML = '';
                     downloadLinkDiv.appendChild(link);
@@ -110,19 +105,27 @@
         }
 
         function updateProgress(processed, failed, total) {
-            const progress = ((processed + failed) / total * 100).toFixed(2);
+            const progress = (((processed + failed) / total) * 100).toFixed(2);
             document.getElementById('progress').textContent = `进度: ${progress}% (成功: ${processed}, 失败: ${failed})`;
         }
 
         function generateUniqueRandomDates(count) {
             const dates = [];
             const now = new Date();
-            const past24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 24小时前
+            const past72Hours = new Date(now.getTime() - 72 * 60 * 60 * 1000);
+            const startHour = 7 * 60 * 60 * 1000 + 30 * 60 * 1000;
+            const endHour = 17 * 60 * 60 * 1000 + 30 * 60 * 1000;
 
             const usedTimes = new Set();
 
             while (dates.length < count) {
-                const randomTime = randomDateInRange(past24Hours, now);
+                let randomTime;
+                do {
+                    randomTime = randomDateInRange(past72Hours, now);
+                    // 添加一个随机的偏移（1到30分钟之间的随机数）
+                    const randomOffset = Math.floor(Math.random() * 30 + 1) * 60 * 1000;
+                    randomTime = new Date(randomTime.getTime() + randomOffset);
+                } while (randomTime.getHours() * 60 * 60 * 1000 + randomTime.getMinutes() * 60 * 1000 < startHour || randomTime.getHours() * 60 * 60 * 1000 + randomTime.getMinutes() * 60 * 1000 > endHour);
                 const timeKey = randomTime.getTime();
                 if (!usedTimes.has(timeKey)) {
                     usedTimes.add(timeKey);
@@ -130,7 +133,6 @@
                 }
             }
 
-            // 打乱日期数组顺序
             shuffleArray(dates);
 
             return dates;
@@ -161,7 +163,6 @@
 
                         const isoValue = Math.floor(Math.random() * 19) * 25 + 50;
 
-                        // 曝光时间数组，确保不超过0.125秒（即1/8秒）
                         const exposureTimes = [
                             [1, 8000], [1, 4000], [1, 2000], [1, 1000], [1, 500],
                             [1, 250], [1, 125], [1, 60], [1, 30], [1, 15],
@@ -169,35 +170,31 @@
                         ];
                         const exposureTime = exposureTimes[Math.floor(Math.random() * exposureTimes.length)];
 
-                        // 确保焦距只能是24mm或70mm
                         const focalLength = Math.random() < 0.5 ? 24 : 70;
-                        const fNumber = focalLength === 24 ? [17, 10] : [24, 10]; // f/1.7 或 f/2.4
+                        const fNumber = focalLength === 24 ? [17, 10] : [24, 10];
 
                         if (fileType === 'image/jpeg') {
                             let exifObj = piexif.load(e.target.result);
 
-                            // 修改EXIF数据
                             exifObj["0th"][piexif.ImageIFD.Model] = "Galaxy S23 Ultra";
                             exifObj["0th"][piexif.ImageIFD.Make] = "samsung";
+                            exifObj["0th"][piexif.ImageIFD.DateTime] = formatDate(randomDate);
                             exifObj["Exif"][piexif.ExifIFD.DateTimeOriginal] = formatDate(randomDate);
+                            exifObj["Exif"][piexif.ExifIFD.DateTimeDigitized] = formatDate(randomDate);
                             exifObj["Exif"][piexif.ExifIFD.ISOSpeedRatings] = isoValue;
                             exifObj["Exif"][piexif.ExifIFD.ExposureTime] = exposureTime;
 
-                            // 设置焦距、光圈和曝光补偿
                             exifObj["Exif"][piexif.ExifIFD.FocalLength] = [focalLength, 1];
                             exifObj["Exif"][piexif.ExifIFD.FNumber] = fNumber;
-                            exifObj["Exif"][piexif.ExifIFD.ExposureBiasValue] = [0, 1]; // 0.00 EV
+                            exifObj["Exif"][piexif.ExifIFD.ExposureBiasValue] = [0, 1];
                             exifObj["Exif"][piexif.ExifIFD.FocalLengthIn35mmFilm] = focalLength;
 
-                            // 添加 ExifVersion 标签，值为 "0220"
-                            exifObj["Exif"][piexif.ExifIFD.ExifVersion] = '0220'; // 正确的方式
+                            exifObj["Exif"][piexif.ExifIFD.ExifVersion] = '0220';
 
-                            // 将修改后的EXIF数据写回图像
                             const exifBytes = piexif.dump(exifObj);
                             newFileContent = piexif.insert(exifBytes, e.target.result);
                             newFileName = `modified_${file.name}`;
                         } else if (fileType === 'image/png') {
-                            // 对于PNG，我们将元数据添加到文件名中
                             const fNumberValue = fNumber[0] / fNumber[1];
                             newFileName = `Galaxy_S23_Ultra_samsung_${formatDateForFileName(randomDate)}_ISO${isoValue}_${focalLength}mm_f${fNumberValue}_${file.name}`;
                         } else {
